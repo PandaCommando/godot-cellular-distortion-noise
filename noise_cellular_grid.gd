@@ -6,43 +6,120 @@ export var noise_y = 0
 export var width = 1
 export var height = 1
 
-var octaves = 9
+export var octaves = 7
 
 func _ready():
-	var data = get_area(noise_x,noise_y,width,height,octaves)
 	
+	var noise = continent_noise(noise_x,noise_y,width,height)#get whitenoise
+	var data = area_distort(noise,noise_x,noise_y,octaves)#distort whitenoise
+	
+	texture = get_texture_from_area(data)#get texture from distorted whitenoise
+	
+	#set scale of sprite to 257 (change to whatever size you want for this demonstration)
+	scale = Vector2(1,1)*600/data.size()
+
+
+
+
+
+
+
+
+#replaces all values that are not "value" with "rvalue"
+func area_extract(area,value,rvalue):
+	
+	var data = area.duplicate()
+	
+	for X in data.size():
+		for Y in data[0].size():
+			if(data[X][Y] != value):
+				data[X][Y] = rvalue
+	return data
+
+
+#gets an area of whitenoise of your desired dimensions
+func get_whitenoise(x,y,width,height):
+	var data = []
+	for X in width+2:
+		data.append([])
+		for Y in height+2:
+			seed(seed_coord(x+X-1,y+Y-1))
+			var v = randi()
+			data[X].append(Color8(rand_range(0,255),rand_range(0,255),rand_range(0,255),255))
+	return data
+
+
+func continent_noise(x,y,width,height):
+	var data = []
+	
+	var off = 4#minimum space between continents
+	var continent_spawnrate = 60 #spawn percentage
+	
+	var off2 = off/2
+	
+	for X in width+2:
+		data.append([])
+		for Y in height+2:
+			seed(seed_coord(x+X-1,y+Y-1))
+			var v = randi()
+			
+			var spawn = false
+			
+			if(floor(rand_range(0,100))<continent_spawnrate):
+				if((X%off==0 && Y%off==0)||((X-off2)%off==0 && (Y-off2)%off==0)):
+					spawn = true
+				else:
+					spawn = false
+			else:
+				spawn = false
+			
+			if(spawn):
+				data[X].append(Color8(rand_range(0,255),rand_range(150,255),rand_range(0,255),255))
+			else: 
+				data[X].append(Color8(rand_range(0,50),rand_range(0,50),255,255))
+	return data
+
+
+#gets a texture from an area
+#only use areas where EVERY VALUE is a color or else it will crash
+func get_texture_from_area(area):
+	return get_texture_from_image(get_image_from_area(area))
+
+
+#gets an image from an area
+#only use areas where EVERY VALUE is a color or else it will crash
+func get_image_from_area(area):
 	var image = Image.new()
-	var img_res_w = data.size()
-	var img_res_h = data[0].size()
+	var img_res_w = area.size()
+	var img_res_h = area[0].size()
 	image.create(img_res_w,img_res_h,false,Image.FORMAT_RGBA8)
 	
 	image.lock()
 	
 	for X in img_res_w:
 		for Y in img_res_h:
-			image.set_pixel(X,Y,data[X][Y])
+			image.set_pixel(X,Y,area[X][Y])
 	
 	image.unlock()
 	
+	return(image)
+
+
+#gets a crisp pixel texture from an image
+func get_texture_from_image(image):
 	var it = ImageTexture.new()
 	it.create_from_image(image)
 	it.set_flags(it.FLAG_ANISOTROPIC_FILTER)
-	texture = it
 	
-	scale = Vector2(1,1)*257/data.size()
+	return(it)
 
-func get_area(x,y,width,height,octaves):
+
+#distorts the area you pass to it using cellular distortion noise
+func area_distort(area,x,y,octaves):
 	#x and y correspond to the top left white noise cell
-	#width/height correspond to the amount of white noise squares you want to generate
-	#octaves are the levels of detail, each octave increases the output resolution: 2^octaves
+	#octaves are the levels of detail, each octave increases the output resolution: (2^octaves)-1
 	
-	var data = [[]]
-	for X in width+2:
-		data[0].append([])
-		for Y in height+2:
-			seed(hash([x+X-1,y+Y-1]))
-			var v = randi()
-			data[0][X].append(Color8(rand_range(0,255),rand_range(0,255),rand_range(0,255),255))
+	var data = [area]
 	
 	for o in octaves-1:
 
@@ -50,9 +127,6 @@ func get_area(x,y,width,height,octaves):
 		var oct = o+1
 		var oct_width = (data[o].size()*2)-1
 		var oct_height = (data[o][0].size()*2)-1
-		print(oct_width)
-		print("~")
-		print(pow(2,o+2)*(width-1)+1)
 		for X in oct_width:
 			data[oct].append([])
 			for Y in oct_height:
@@ -60,7 +134,7 @@ func get_area(x,y,width,height,octaves):
 				var par_y = floor(Y*0.5)
 				var rpx = (x - 1)*oct_width/(width+1)+X
 				var rpy = (y - 1)*oct_height/(height+1)+Y
-				seed(seed_coord(rpx,rpy,o))
+				seed(seed_coord_octave(rpx,rpy,o))
 				var v = randi()
 				var val
 				
@@ -83,16 +157,21 @@ func get_area(x,y,width,height,octaves):
 					val = set[round(randf())]
 				data[oct][X].append(val)
 	
-	
 	return data[octaves-1]
 
 
-
-func seed_coord(x,y,o):
+func seed_coord_octave(x,y,o):
 	var sx = seed2(x * 1947)
 	var sy = seed2(y * 2904)
 	var so = seed2(o * 5307)
 	return seed2(sx ^ sy ^ so)
+
+
+func seed_coord(x,y):
+	var sx = seed2(x * 1947)
+	var sy = seed2(y * 2904)
+	return seed2(sx ^ sy)
+
 
 func seed2(_s):
 	var s = 192837463 ^ int(abs(_s))
